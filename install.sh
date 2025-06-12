@@ -2,14 +2,14 @@
 
 # Kiểm tra quyền root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run with root privileges" 
+   echo "❌ This script must be run with root privileges"
    exit 1
 fi
 
-# Nhập domain từ người dùng
+# Nhập domain
 read -p "Enter your domain (e.g. auto.example.com): " DOMAIN
 
-# Kiểm tra domain đã trỏ đúng IP chưa
+# Kiểm tra domain đã trỏ đúng chưa
 check_domain() {
     local domain=$1
     local server_ip=$(curl -s https://api.ipify.org)
@@ -22,34 +22,38 @@ check_domain() {
     fi
 }
 
+# Cài dig nếu chưa có
 if ! command -v dig &> /dev/null; then
   apt update && apt install -y dnsutils
 fi
 
+# Kiểm tra domain
 if check_domain $DOMAIN; then
-  echo "✅ Domain $DOMAIN đã trỏ đúng IP. Tiếp tục..."
+  echo "✅ Domain $DOMAIN đã trỏ đúng IP. Tiếp tục cài đặt..."
 else
-  echo "❌ Domain $DOMAIN chưa trỏ đúng VPS. Hãy trỏ về IP: $(curl -s https://api.ipify.org)"
+  echo "❌ Domain $DOMAIN chưa trỏ về VPS. Hãy trỏ về IP: $(curl -s https://api.ipify.org)"
   exit 1
 fi
 
 # Cài Docker
-apt-get update
-apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+apt update
+apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+
+install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-mkdir -p /etc/apt/keyrings
 
-echo \  
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
-  > /etc/apt/sources.list.d/docker.list
+echo \
+"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+> /etc/apt/sources.list.d/docker.list
 
-apt-get update
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-compose
 
-# Cấu hình thư mục
+# Tạo thư mục & cd vào
 N8N_DIR="/home/n8n"
-mkdir -p $N8N_DIR
-cd $N8N_DIR || exit 1
+mkdir -p "$N8N_DIR"
+cd "$N8N_DIR" || exit 1
 
 # Tạo file .env
 cat << EOF > .env
@@ -72,12 +76,9 @@ services:
     ports:
       - "5678:5678"
     volumes:
-      - $N8N_DIR:/home/node/.n8n
+      - ./files:/home/node/.n8n
     networks:
       - n8n_network
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
 
   caddy:
     image: caddy:2
@@ -86,7 +87,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - $N8N_DIR/Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
@@ -112,14 +113,15 @@ $DOMAIN {
 }
 EOF
 
-# Cấp quyền & khởi động
-chown -R 1000:1000 $N8N_DIR
-docker-compose -f docker-compose.yml up -d
+# Cấp quyền & chạy
+mkdir -p ./files
+chown -R 1000:1000 ./files
+docker-compose up -d
 
 # Hoàn tất
 echo ""
 echo "🎉 N8n đã được cài đặt thành công!"
-echo "🌐 Truy cập tại: https://$DOMAIN"
-echo "📁 File cấu hình: $N8N_DIR/.env"
-echo "📚 Tài liệu học: https://n8n-basic.mecode.pro"
+echo "🌐 Truy cập: https://$DOMAIN"
+echo "🛠 Cấu hình nằm tại: /home/n8n"
+echo "📁 File .env, docker-compose.yml và Caddyfile đã được tạo"
 echo ""
