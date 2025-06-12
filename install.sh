@@ -9,7 +9,7 @@ fi
 # Yêu cầu nhập domain
 read -p "Enter your domain (e.g. auto.example.com): " DOMAIN
 
-# Kiểm tra domain đã trỏ đúng IP chưa
+# Hàm kiểm tra domain đã trỏ về đúng IP chưa
 check_domain() {
   local domain=$1
   local server_ip=$(curl -s https://api.ipify.org)
@@ -42,14 +42,14 @@ apt install -y apt-transport-https ca-certificates curl software-properties-comm
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+echo \  
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" \
+  > /etc/apt/sources.list.d/docker.list
 
 apt update
 apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# Khởi tạo thư mục
+# Tạo thư mục cài n8n
 N8N_DIR="/opt/n8n"
 mkdir -p $N8N_DIR
 cd $N8N_DIR
@@ -109,12 +109,15 @@ ${DOMAIN} {
 }
 EOF
 
-# Cấp quyền và khởi động
+# Tạo thư mục dữ liệu và cấp quyền
 mkdir -p ./n8n_data
 chown -R 1000:1000 ./n8n_data
+
 docker compose up -d
 
 echo ""
 echo "🎉 N8n đã được cài đặt thành công!"
 echo "🌐 Truy cập tại: https://${DOMAIN}"
+echo ""
+echo "📌 Nếu không truy cập được, kiểm tra DNS hoặc chạy: docker logs n8n"
 echo ""
