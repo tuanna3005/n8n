@@ -1,59 +1,63 @@
 #!/bin/bash
 
-# ====== KIỂM TRA QUYỀN ROOT ======
+# Kiểm tra quyền root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script needs to be run with root privileges" 
-   exit 1
+  echo "⚠️  This script must be run as root!"
+  exit 1
 fi
 
-# ====== HÀM KIỂM TRA DOMAIN ======
-check_domain() {
-    local domain=$1
-    local server_ip=$(curl -s https://api.ipify.org)
-    local domain_ip=$(dig +short $domain | tail -n1)
+# Yêu cầu nhập domain
+read -p "Enter your domain (e.g. auto.example.com): " DOMAIN
 
-    if [ "$domain_ip" = "$server_ip" ]; then
-        return 0
-    else
-        return 1
-    fi
+# Kiểm tra domain đã trỏ đúng IP chưa
+check_domain() {
+  local domain=$1
+  local server_ip=$(curl -s https://api.ipify.org)
+  local domain_ip=$(dig +short $domain | tail -n1)
+
+  if [ "$domain_ip" = "$server_ip" ]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
-# ====== NHẬN DOMAIN ======
-read -p "Enter your domain or subdomain (e.g. auto.example.com): " DOMAIN
-
+# Cài dnsutils nếu thiếu
 if ! command -v dig &> /dev/null; then
-  apt-get update && apt-get install -y dnsutils
+  apt update && apt install -y dnsutils
 fi
 
+# Kiểm tra domain
 if check_domain $DOMAIN; then
-    echo "\n✅ Domain trỏ đúng IP. Tiếp tục cài đặt..."
+  echo -e "\n✅ Domain $DOMAIN đã trỏ đúng IP. Tiếp tục cài đặt..."
 else
-    echo "\n❌ Domain $DOMAIN chưa trỏ về VPS. Vui lòng trỏ về IP: $(curl -s https://api.ipify.org)"
-    exit 1
+  echo -e "\n❌ Domain $DOMAIN chưa trỏ về VPS. Vui lòng trỏ về IP: $(curl -s https://api.ipify.org)"
+  exit 1
 fi
 
-# ====== BIẾN MÔI TRƯỜNG ======
-N8N_DIR="/opt/n8n"
+# Cài Docker & Docker Compose
+apt update
+apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
 
-# ====== CÀI DOCKER VÀ COMPOSE ======
-apt-get update && \
-apt-get install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
-
+install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
-echo \  
-  "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" \
-  > /etc/apt/sources.list.d/docker.list
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
 
-apt-get update && \
-apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-# ====== TẠO THƯ MỤC & FILE CẤU HÌNH ======
+# Khởi tạo thư mục
+N8N_DIR="/opt/n8n"
 mkdir -p $N8N_DIR
+cd $N8N_DIR
 
-cat << EOF > $N8N_DIR/docker-compose.yml
+# Tạo docker-compose.yml
+cat <<EOF > docker-compose.yml
 version: "3.8"
+
 services:
   n8n:
     image: n8nio/n8n
@@ -65,7 +69,6 @@ services:
       - NODE_ENV=production
       - WEBHOOK_URL=https://${DOMAIN}
       - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
-      - N8N_DIAGNOSTICS_ENABLED=false
     volumes:
       - ./n8n_data:/home/node/.n8n
     networks:
@@ -97,8 +100,8 @@ volumes:
   caddy_config:
 EOF
 
-# ====== TẠO CADDYFILE ======
-cat << EOF > $N8N_DIR/Caddyfile
+# Tạo Caddyfile
+cat <<EOF > Caddyfile
 ${DOMAIN} {
     reverse_proxy n8n:5678
     encode gzip
@@ -106,15 +109,12 @@ ${DOMAIN} {
 }
 EOF
 
-# ====== CHOWN & START ======
-cd $N8N_DIR
-mkdir -p ./n8n_data && chown -R 1000:1000 ./n8n_data
-
+# Cấp quyền và khởi động
+mkdir -p ./n8n_data
+chown -R 1000:1000 ./n8n_data
 docker compose up -d
 
 echo ""
 echo "🎉 N8n đã được cài đặt thành công!"
 echo "🌐 Truy cập tại: https://${DOMAIN}"
-echo ""
-echo "📌 Nếu không truy cập được, kiểm tra DNS đã trỏ đúng hoặc chạy: docker logs n8n"
 echo ""
