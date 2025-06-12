@@ -1,79 +1,72 @@
 #!/bin/bash
 
-# Kiểm tra quyền root
+# Kiểm tra xem script có được chạy với quyền root không
 if [[ $EUID -ne 0 ]]; then
-  echo "⚠️  This script must be run as root!"
-  exit 1
+   echo "This script needs to be run with root privileges" 
+   exit 1
 fi
 
-# Yêu cầu nhập domain
-read -p "Enter your domain (e.g. auto.example.com): " DOMAIN
-
-# Hàm kiểm tra domain đã trỏ về đúng IP chưa
+# Hàm kiểm tra domain
 check_domain() {
-  local domain=$1
-  local server_ip=$(curl -s https://api.ipify.org)
-  local domain_ip=$(dig +short $domain | tail -n1)
+    local domain=$1
+    local server_ip=$(curl -s https://api.ipify.org)
+    local domain_ip=$(dig +short $domain)
 
-  if [ "$domain_ip" = "$server_ip" ]; then
-    return 0
-  else
-    return 1
-  fi
+    if [ "$domain_ip" = "$server_ip" ]; then
+        return 0  # Domain đã trỏ đúng
+    else
+        return 1  # Domain chưa trỏ đúng
+    fi
 }
 
-# Cài dnsutils nếu thiếu
-if ! command -v dig &> /dev/null; then
-  apt update && apt install -y dnsutils
-fi
+# Nhận input domain từ người dùng
+read -p "Enter your domain or subdomain: " DOMAIN
 
 # Kiểm tra domain
 if check_domain $DOMAIN; then
-  echo -e "\n✅ Domain $DOMAIN đã trỏ đúng IP. Tiếp tục cài đặt..."
+    echo "Domain $DOMAIN has been correctly pointed to this server. Continuing installation"
 else
-  echo -e "\n❌ Domain $DOMAIN chưa trỏ về VPS. Vui lòng trỏ về IP: $(curl -s https://api.ipify.org)"
-  exit 1
+    echo "Domain $DOMAIN has not been pointed to this server."
+    echo "Please update your DNS record to point $DOMAIN to IP $(curl -s https://api.ipify.org)"
+    echo "After updating the DNS, run this script again"
+    exit 1
 fi
 
-# Cài Docker & Docker Compose
-apt update
-apt install -y apt-transport-https ca-certificates curl software-properties-common gnupg lsb-release
+# Sử dụng thư mục /home trực tiếp
+N8N_DIR="/home/n8n"
 
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+# Cài đặt Docker và Docker Compose
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose
 
-echo \  
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \$(lsb_release -cs) stable" \
-  > /etc/apt/sources.list.d/docker.list
-
-apt update
-apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-# Tạo thư mục cài n8n
-N8N_DIR="/opt/n8n"
+# Tạo thư mục cho n8n
 mkdir -p $N8N_DIR
-cd $N8N_DIR
 
-# Tạo docker-compose.yml
-cat <<EOF > docker-compose.yml
-version: "3.8"
-
+# Tạo file docker-compose.yml
+cat << EOF > $N8N_DIR/docker-compose.yml
+version: "3"
 services:
   n8n:
     image: n8nio/n8n
     restart: always
     environment:
-      - N8N_HOST=${DOMAIN}
+      - N8N_HOST=\${DOMAIN}
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - NODE_ENV=production
-      - WEBHOOK_URL=https://${DOMAIN}
+      - WEBHOOK_URL=https://\${DOMAIN}
       - GENERIC_TIMEZONE=Asia/Ho_Chi_Minh
+      - N8N_DIAGNOSTICS_ENABLED=false
     volumes:
-      - ./n8n_data:/home/node/.n8n
+      - \$N8N_DIR:/home/node/.n8n
     networks:
-      - n8n_net
+      - n8n_network
     dns:
+      - 8.8.8.8
       - 1.1.1.1
 
   caddy:
@@ -83,16 +76,16 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - \$N8N_DIR/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - n8n
     networks:
-      - n8n_net
+      - n8n_network
 
 networks:
-  n8n_net:
+  n8n_network:
     driver: bridge
 
 volumes:
@@ -100,24 +93,29 @@ volumes:
   caddy_config:
 EOF
 
-# Tạo Caddyfile
-cat <<EOF > Caddyfile
-${DOMAIN} {
+# Tạo file Caddyfile
+cat << EOF > $N8N_DIR/Caddyfile
+\${DOMAIN} {
     reverse_proxy n8n:5678
-    encode gzip
-    log
 }
 EOF
 
-# Tạo thư mục dữ liệu và cấp quyền
-mkdir -p ./n8n_data
-chown -R 1000:1000 ./n8n_data
+# Đặt quyền cho thư mục n8n
+chown -R 1000:1000 $N8N_DIR
+chmod -R 755 $N8N_DIR
 
-docker compose up -d
+# Khởi động các container
+cd $N8N_DIR
+docker-compose up -d
 
 echo ""
-echo "🎉 N8n đã được cài đặt thành công!"
-echo "🌐 Truy cập tại: https://${DOMAIN}"
-echo ""
-echo "📌 Nếu không truy cập được, kiểm tra DNS hoặc chạy: docker logs n8n"
+echo "╔═════════════════════════════════════════════════════════════╗"
+echo "║                                                             "
+echo "║  ✅ N8n đã được cài đặt thành công!                         "
+echo "║                                                             "
+echo "║  🌐 Truy cập: https://\${DOMAIN}                             "
+echo "║                                                             "
+echo "║  📚 Học n8n cơ bản: https://n8n-basic.mecode.pro            "
+echo "║                                                             "
+echo "╚═════════════════════════════════════════════════════════════╝"
 echo ""
