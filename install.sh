@@ -2,7 +2,7 @@
 
 # Kiểm tra quyền root
 if [[ $EUID -ne 0 ]]; then
-   echo "This script needs to be run with root privileges"
+   echo "Script này cần chạy với quyền root"
    exit 1
 fi
 
@@ -20,19 +20,19 @@ check_domain() {
 }
 
 # Nhận input domain từ người dùng
-read -p "Enter your domain or subdomain: " DOMAIN
+read -p "Nhập domain hoặc subdomain của bạn: " DOMAIN
 
 # Kiểm tra domain
 if check_domain $DOMAIN; then
-    echo "Domain $DOMAIN has been correctly pointed to this server. Continuing installation"
+    echo "Domain $DOMAIN đã được trỏ đúng tới server này. Tiếp tục cài đặt"
 else
-    echo "Domain $DOMAIN has not been pointed to this server."
-    echo "Please update your DNS record to point $DOMAIN to IP $(curl -s https://api.ipify.org)"
-    echo "After updating the DNS, run this script again"
+    echo "Domain $DOMAIN chưa được trỏ tới server này."
+    echo "Vui lòng cập nhật DNS để trỏ $DOMAIN tới IP $(curl -s https://api.ipify.org)"
+    echo "Sau khi cập nhật DNS, chạy lại script này"
     exit 1
 fi
 
-# Sử dụng thư mục /home trực tiếp
+# Sử dụng thư mục /home/n8n
 N8N_DIR="/home/n8n"
 
 # Cài đặt Docker và Docker Compose
@@ -107,14 +107,27 @@ EOF
 chown -R 1000:1000 $N8N_DIR
 chmod -R 755 $N8N_DIR
 
-# Khởi động các container
+# Khởi động các container và kiểm tra lỗi
 cd $N8N_DIR
 docker-compose up -d
+
+# Kiểm tra trạng thái container
+echo "Kiểm tra trạng thái container..."
+sleep 10
+if docker ps -a | grep -q "n8n_n8n_1"; then
+    if docker ps | grep -q "n8n_n8n_1"; then
+        echo "Container n8n đang chạy ổn định."
+    else
+        echo "Lỗi: Container n8n không chạy. Kiểm tra log với lệnh: docker logs n8n_n8n_1"
+    fi
+else
+    echo "Lỗi: Container n8n không được tạo. Kiểm tra file docker-compose.yml và log."
+fi
 
 echo ""
 echo "╔═════════════════════════════════════════════════════════════╗"
 echo "║                                                             ║"
-echo "║  ✅ N8n đã được cài đặt thành công!                         ║"
+echo "║  ✅ N8n đã được cài đặt (hoặc đang xử lý).                  ║"
 echo "║                                                             ║"
 echo "║  🌐 Truy cập: https://$DOMAIN                              ║"
 echo "║                                                             ║"
