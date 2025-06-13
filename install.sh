@@ -44,7 +44,7 @@ apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose
 
 # Tạo thư mục cho n8n
-mkdir -p $N8N_DIR
+mkdir -p $N8N_DIR/files
 
 # Tạo file .env
 cat << 'EOF' > $N8N_DIR/.env
